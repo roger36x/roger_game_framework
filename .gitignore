@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+
+# Native libraries (built from source, not committed)
+fnalibs/
+fnalibs.tar.bz2
+
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# .NET
+*.nupkg
+*.snupkg
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Crash dumps
+*.dmp
+core
