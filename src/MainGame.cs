@@ -11,6 +11,7 @@ public struct DrawItem : IComparable<DrawItem>
     public float DepthKey;
     public Texture2D Texture;
     public Vector2 Position;
+    public Color Tint;
 
     public int CompareTo(DrawItem other) => DepthKey.CompareTo(other.DepthKey);
 }
@@ -30,6 +31,10 @@ public class MainGame : Microsoft.Xna.Framework.Game
     private EntityManager _entities;
     private Player _player;
     private InputSystem _inputSystem;
+
+    // Weather
+    private ParticleSystem _particleSystem;
+    private WeatherSystem _weatherSystem;
 
     private readonly List<DrawItem> _drawItems = new(4096);
 
@@ -68,6 +73,9 @@ public class MainGame : Microsoft.Xna.Framework.Game
         var interactionSystem = new InteractionSystem(_entities, collisionSystem);
         _inputSystem = new InputSystem(_entities, collisionSystem, interactionSystem, _player.EntityId);
 
+        _particleSystem = new ParticleSystem(GraphicsDevice, GameConfig.MaxParticles);
+        _weatherSystem = new WeatherSystem(GraphicsDevice, _particleSystem, _lightingSystem);
+
         // Test entities
         EntityFactory.CreateDoor(_entities, GraphicsDevice, 97, 95, startOpen: false);
         EntityFactory.CreateFurniture(_entities, GraphicsDevice, 97, 97);
@@ -85,6 +93,8 @@ public class MainGame : Microsoft.Xna.Framework.Game
         _tileMap.LoadContent(GraphicsDevice);
         _blockRenderer.LoadContent(GraphicsDevice);
         _lightingSystem.LoadContent();
+        _particleSystem.LoadContent();
+        _weatherSystem.LoadContent();
 
         // Test lights
         _lightingSystem.AddLight(new LightSource
@@ -129,9 +139,23 @@ public class MainGame : Microsoft.Xna.Framework.Game
         // Day/night toggle: K=day, L=night
         var keyboard = Keyboard.GetState();
         if (keyboard.IsKeyDown(Keys.K))
-            _lightingSystem.AmbientColor = GameConfig.AmbientDay;
+            _weatherSystem.SetDayNight(false);
         if (keyboard.IsKeyDown(Keys.L))
-            _lightingSystem.AmbientColor = GameConfig.AmbientNight;
+            _weatherSystem.SetDayNight(true);
+
+        // Weather toggle: 1=rain, 2=snow, 3=fog, 4=clear
+        if (keyboard.IsKeyDown(GameConfig.WeatherRainKey))
+            _weatherSystem.SetWeather(WeatherType.Rain);
+        if (keyboard.IsKeyDown(GameConfig.WeatherSnowKey))
+            _weatherSystem.SetWeather(WeatherType.Snow);
+        if (keyboard.IsKeyDown(GameConfig.WeatherFogKey))
+            _weatherSystem.SetWeather(WeatherType.Fog);
+        if (keyboard.IsKeyDown(GameConfig.WeatherClearKey))
+            _weatherSystem.SetWeather(WeatherType.Clear);
+
+        // Update weather and particles
+        _weatherSystem.Update(dt, _camera.Position);
+        _particleSystem.Update(dt);
 
         // FPS counter
         _fpsTimer += dt;
@@ -141,7 +165,7 @@ public class MainGame : Microsoft.Xna.Framework.Game
             _currentFps = _frameCount;
             _frameCount = 0;
             _fpsTimer -= 1f;
-            Window.Title = $"Game Prototype - FPS: {_currentFps} | Chunks: {_chunkManager.LoadedChunkCount} | Tiles: {_visibleTileCount} | Lights: {_lightingSystem.LightCount}";
+            Window.Title = $"Game Prototype - FPS: {_currentFps} | Chunks: {_chunkManager.LoadedChunkCount} | Tiles: {_visibleTileCount} | Lights: {_lightingSystem.LightCount} | Weather: {_weatherSystem.CurrentWeather} | Particles: {_weatherSystem.ParticleCount}";
         }
 
         base.Update(gameTime);
@@ -187,8 +211,12 @@ public class MainGame : Microsoft.Xna.Framework.Game
                         var cell = chunk.GetCell(lx, ly);
                         _visibleTileCount++;
 
-                        // Ground tile
+                        // Ground tile (apply wetness tint when raining)
                         Vector2 groundScreenPos = IsoUtils.WorldToScreen(wx, wy);
+                        Color groundTint = Color.White;
+                        if (_weatherSystem.Wetness > 0f)
+                            groundTint = LerpColor(Color.White, GameConfig.GroundWetTint, _weatherSystem.Wetness);
+
                         _drawItems.Add(new DrawItem
                         {
                             DepthKey = IsoUtils.GetDepthKey(wx, wy, 0, 0),
@@ -196,7 +224,8 @@ public class MainGame : Microsoft.Xna.Framework.Game
                             Position = new Vector2(
                                 groundScreenPos.X - IsoUtils.TileWidth / 2f,
                                 groundScreenPos.Y
-                            )
+                            ),
+                            Tint = groundTint
                         });
 
                         // Blocks (each layer is a separate draw item)
@@ -206,7 +235,8 @@ public class MainGame : Microsoft.Xna.Framework.Game
                             {
                                 DepthKey = IsoUtils.GetDepthKey(wx, wy, layer, 1),
                                 Texture = _blockRenderer.BlockTexture,
-                                Position = _blockRenderer.GetDrawPosition(wx, wy, layer)
+                                Position = _blockRenderer.GetDrawPosition(wx, wy, layer),
+                                Tint = Color.White
                             });
                         }
                     }
@@ -229,7 +259,8 @@ public class MainGame : Microsoft.Xna.Framework.Game
                 Position = new Vector2(
                     screenPos.X - sprite.Width / 2f,
                     screenPos.Y - sprite.Height + IsoUtils.TileHeight / 2f + sprite.OffsetY
-                )
+                ),
+                Tint = Color.White
             });
         }
 
@@ -250,7 +281,7 @@ public class MainGame : Microsoft.Xna.Framework.Game
         for (int i = 0; i < _drawItems.Count; i++)
         {
             var item = _drawItems[i];
-            _spriteBatch.Draw(item.Texture, item.Position, Color.White);
+            _spriteBatch.Draw(item.Texture, item.Position, item.Tint);
         }
 
         _spriteBatch.End();
@@ -258,7 +289,19 @@ public class MainGame : Microsoft.Xna.Framework.Game
         // === Pass 3: Composite light map over scene ===
         _lightingSystem.ApplyLightMap(_spriteBatch);
 
+        // === Pass 4: Weather overlay (fog + particles) ===
+        _weatherSystem.Draw(_spriteBatch);
+
         base.Draw(gameTime);
+    }
+
+    private static Color LerpColor(Color a, Color b, float t)
+    {
+        return new Color(
+            (int)MathHelper.Lerp(a.R, b.R, t),
+            (int)MathHelper.Lerp(a.G, b.G, t),
+            (int)MathHelper.Lerp(a.B, b.B, t)
+        );
     }
 
     private static int FloorDiv(int a, int b)
