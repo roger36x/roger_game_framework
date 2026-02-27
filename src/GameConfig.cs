@@ -54,4 +54,44 @@ public static class GameConfig
     public static readonly Color DoorOpenColor = new(139, 90, 43, 80);
     public static readonly Color FurnitureColor = new(160, 120, 80);
     public static readonly Color ItemColor = new(255, 215, 0);
+
+    // === Weather ===
+    public const float WeatherTransitionSeconds = 5f;
+    public const int MaxParticles = 2048;
+
+    // Rain
+    public const int RainTexWidth = 2;
+    public const int RainTexHeight = 8;
+    public const float RainParticlesPerSecond = 600f;
+    public const float RainVelocityX = -30f;
+    public const float RainVelocityY = 500f;
+    public static readonly Color AmbientRain = new(100, 100, 130);
+
+    // Snow
+    public const int SnowTexSize = 4;
+    public const float SnowParticlesPerSecond = 200f;
+    public const float SnowVelocityX = 15f;
+    public const float SnowVelocityY = 40f;
+    public static readonly Color AmbientSnow = new(170, 175, 190);
+
+    // Fog
+    public const float FogMaxOpacity = 0.4f;
+    public static readonly Vector2 FogWindDirection = new(-1f, 0.3f); // leftward with slight downward drift
+    public const float FogWindSpeed = 25f; // pixels/sec in source space
+    public static readonly Color FogColor = new(140, 145, 155);
+    public static readonly Color AmbientFog = new(140, 145, 155);
+
+    // Ground wetness
+    public const float WetnessGainRate = 0.15f;
+    public const float WetnessDryRate = 0.05f;
+    public static readonly Color GroundWetTint = new(150, 160, 200);
+
+    // Particle spawn/cull margin (pixels beyond screen edge)
+    public const float ParticleSpawnMargin = 400f;
+
+    // Weather input keys
+    public const Keys WeatherRainKey = Keys.D1;
+    public const Keys WeatherSnowKey = Keys.D2;
+    public const Keys WeatherFogKey = Keys.D3;
+    public const Keys WeatherClearKey = Keys.D4;
 }

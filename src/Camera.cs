@@ -32,10 +32,9 @@ public class Camera
 
     public Matrix GetTransformMatrix()
     {
-        // Round to integer pixels to prevent sub-pixel flickering with PointClamp
         return Matrix.CreateTranslation(
-            MathF.Round(-Position.X + _viewport.Width / 2f),
-            MathF.Round(-Position.Y + _viewport.Height / 2f),
+            -Position.X + _viewport.Width / 2f,
+            -Position.Y + _viewport.Height / 2f,
             0f
         );
     }

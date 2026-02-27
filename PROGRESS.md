@@ -238,11 +238,75 @@ src/
 
 ---
 
+## Milestone 6：天气与粒子系统 — 已完成
+
+**完成日期**：2026-02-26
+
+**目标**：添加天气效果（雨、雪、雾）和粒子系统
+
+### 完成内容
+- 独立粒子引擎：固定大小 Particle[] 数组池（2048 上限），swap-remove 零 GC
+- 雨效果：屏幕空间竖条纹粒子（2x8），600 粒子/秒，带风向偏移
+- 雪效果：屏幕空间软圆点粒子（4x4），200 粒子/秒，缓慢飘落 + 随机大小
+- 雾效果：全屏半透明覆层，渐进式淡入淡出
+- 天气状态机：Clear/Rain/Snow/Fog 四种状态，3 秒平滑过渡
+- 天气修改环境光照：雨→暗蓝灰色、雪→冷色调、雾→灰色
+- 日夜 + 天气联动：天气与日夜系统交互，夜间天气使用混合环境光
+- 地面湿润效果：下雨时地面瓦片渐变为蓝色色调（Wetness 0-1 线性变化），雨停后缓慢干燥
+- DrawItem 增加 Tint 字段支持瓦片着色
+- 4-pass 渲染管线：光照图 → 场景 → 光照合成 → 天气覆层
+- 键盘控制：1=雨、2=雪、3=雾、4=晴，K=白天、L=夜晚
+- 窗口标题显示天气类型和活跃粒子数
+
+### 关键技术决策
+- 粒子不使用 ECS 实体（Dictionary 开销太大），独立 struct 数组直接迭代
+- 雨/雪采用屏幕空间渲染（Pass 4），无需深度排序，性能更优
+- 雾覆层在光照合成之后绘制，暗区中雾自然变暗（物理正确）
+- 天气通过 WeatherSystem 统一管理 LightingSystem.AmbientColor，取代手动 K/L 直接赋值
+
+### 新增文件
+- `src/Particle.cs` — 粒子数据 struct（8 float + 1 byte）
+- `src/ParticleSystem.cs` — 粒子引擎：池化管理、发射、更新、绘制、纹理生成
+- `src/WeatherSystem.cs` — 天气状态机、粒子发射、雾覆层、环境光调制、地面湿度
+
+### 修改文件
+- `src/GameConfig.cs` — 新增天气常量（粒子速率、颜色、按键、雾参数、湿度参数）
+- `src/MainGame.cs` — DrawItem.Tint 字段 + 天气系统集成 + Pass 4 + 日夜重构
+
+### 代码结构
+```
+src/
+├── Program.cs             — 入口点
+├── MainGame.cs            — 主循环，4-pass 渲染（含天气覆层）
+├── GameConfig.cs          — 集中配置常量（含天气参数）
+├── Camera.cs              — SmoothDamp 镜头 + 像素对齐
+├── IsoUtils.cs            — 等距坐标转换
+├── TileMap.cs             — 地面纹理提供者
+├── BlockRenderer.cs       — 等距方块纹理生成
+├── Components.cs          — ECS 组件定义
+├── EntityManager.cs       — 实体管理 + 空间索引
+├── CollisionSystem.cs     — 碰撞检测
+├── InputSystem.cs         — 玩家输入处理
+├── InteractionSystem.cs   — 交互系统
+├── EntityFactory.cs       — 实体工厂
+├── Player.cs              — 玩家薄包装
+├── Chunk.cs               — 16×16 chunk 数据结构
+├── IChunkGenerator.cs     — chunk 生成接口
+├── ProceduralGenerator.cs — 确定性生成 + 测试房间
+├── ChunkManager.cs        — chunk 生命周期管理
+├── LightSource.cs         — 点光源数据结构
+├── LightingSystem.cs      — 光照图渲染 + 阴影 + 合成
+├── Particle.cs            — 粒子数据 struct
+├── ParticleSystem.cs      — 粒子引擎
+└── WeatherSystem.cs       — 天气状态机 + 环境效果
+```
+
+---
+
 ## 待完成里程碑
 
 | 里程碑 | 目标 | 状态 |
 |--------|------|------|
-| Milestone 6 | 天气与粒子 | 待开始 |
 | Milestone 7 | 音频系统 | 待开始 |
 | Milestone 8 | Lua 脚本绑定 | 待开始 |
 | Milestone 9 | 网络与多人 | 待开始 |
@@ -251,8 +315,8 @@ src/
 
 ## 环境信息
 
-- **平台**：macOS Apple Silicon (M3 Pro)
-- **SDK**：.NET 8.0.124 via Homebrew
+- **平台**：macOS Apple Silicon (M4 Pro)
+- **SDK**：.NET 8.0.418 via dotnet-install.sh（$HOME/.dotnet）
 - **框架**：FNA 26.02（SDL3 + Metal）
 - **IDE**：Cursor + C# Dev Kit
-- **构建命令**：`export PATH="/opt/homebrew/opt/dotnet@8/bin:$PATH" && dotnet run`
+- **构建命令**：`export PATH="$HOME/.dotnet:$PATH" && dotnet run`
