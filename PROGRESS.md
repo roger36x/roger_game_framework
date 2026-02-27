@@ -303,12 +303,131 @@ src/
 
 ---
 
+## Milestone 7：音频系统 — 已完成
+
+**完成日期**：2026-02-27
+
+**目标**：空间化音频、环境音、日夜氛围音
+
+### 完成内容
+- 程序化音频生成：所有音效运行时合成 PCM16 数据，零外部文件
+- 一次性音效（SoundEffect + SoundEffectInstance 池化）：
+  - 脚步声：白噪声 + 指数衰减（80ms），随机 pitch 变化
+  - 开门/关门：频率扫频 + 噪声混合（200-300ms）
+  - 拾取：上行双谐波扫频（150ms）
+  - 推动：低通噪声 + 衰减（200ms）
+- 流式环境音（DynamicSoundEffectInstance, 44100Hz Mono）：
+  - 雨声：Voss-McCartney 粉噪声 + 随机滴答
+  - 风声（雪/雾）：低通白噪声 + 0.3Hz 振幅调制
+  - 夜虫：脉冲串蟋蟀鸣叫（3-6 个 Hann 窗脉冲 × 双谐波载波，55Hz 脉冲率）
+  - 白天氛围：极轻粉噪声底噪
+- 空间化：距离衰减（1 - dist/maxDist）+ 等距 pan（左右声道偏移）
+- 环境音量 crossfade 平滑过渡
+- M 键静音/恢复
+
+### 关键技术决策
+- 借鉴 RogerPlayer 设计：关注点分离、主动轮询替代回调、预计算音量/pan
+- Update 中检查 PendingBufferCount < 3 主动提交 buffer，不使用 BufferNeeded 事件
+- SFX 实例池（8 槽位）避免每次播放分配
+- 复用 short[4096] + byte[8192] buffer 减少 GC 压力
+- 蟋蟀合成使用脉冲串（模拟翅膀摩擦节奏）而非纯正弦波
+
+### 新增文件
+- `src/ProceduralAudio.cs` — 波形生成工具（噪声、扫频、包络、滤波、流式环境音）
+- `src/AudioSystem.cs` — 音频管理器（SFX 池、流式环境、空间化、crossfade）
+
+### 修改文件
+- `src/GameConfig.cs` — 音频常量（音量、间隔、距离、采样率）
+- `src/InteractionSystem.cs` — 交互触发音效
+- `src/InputSystem.cs` — 脚步音效
+- `src/WeatherSystem.cs` — 天气环境音联动
+- `src/MainGame.cs` — 音频系统集成
+
+---
+
+## Milestone 8：Lua 脚本绑定 — 已完成
+
+**完成日期**：2026-02-27
+
+**目标**：嵌入 Lua 运行时，实体定义数据驱动，支持热重载
+
+### 完成内容
+- NLua v1.7.8（原生 Lua 5.4 via KeraLua）集成，NuGet 自动分发 liblua54.dylib
+- 实体模板系统：Lua 脚本定义实体类型（形状、颜色、碰撞、交互），C# 运行时解析
+- 参数化纹理生成：Block（等距立方体）/ Diamond（菱形）/ Rect（矩形），按模板缓存
+- 9 个 Lua API 函数：define_entity, spawn, destroy, get_position, set_position, play_sound, can_move_to, add_light, log
+- 世界初始化迁移到 Lua 脚本（实体 + 光源）
+- 自定义交互回调支持（Lua 函数处理 on_interact）
+- F5 热重载：销毁实体 → 清缓存 → 重载 Lua → 重新执行（无需重编译）
+- 沙箱安全：移除 os/io/loadfile/dofile
+
+### 关键技术决策
+- 选择 NLua 而非 MoonSharp：活跃维护（2026.01 更新）、.NET 8 + macOS ARM64 验证
+- NLua 数字全部为 double，数组索引用 long（1L, 2L, 3L）
+- 模板解析为纯 C# EntityTemplate 类，不持有 LuaTable 引用（安全释放）
+- 脚本按固定顺序加载：entities.lua → interactions.lua → world.lua（模板先于实例化）
+- Player 仍由 C# 创建（PlayerControlled 组件特殊），其余实体全部 Lua 驱动
+- EntityFactory 保留作为回退（Player 创建 + 脚本加载失败时）
+
+### 新增文件
+- `src/EntityTemplate.cs` — 模板数据结构（ShapeType, SpriteTemplate, ColorTemplate, EntityTemplate）
+- `src/TextureGenerator.cs` — 参数化纹理生成 + 缓存
+- `src/ScriptEngine.cs` — NLua 运行时管理（沙箱、加载、热重载）
+- `src/GameAPI.cs` — Lua↔C# 桥接（9 个 API 函数 + LuaTable 解析）
+- `scripts/entities.lua` — 实体模板定义（door, door_open, furniture, item）
+- `scripts/world.lua` — 世界初始化（实体生成 + 光源配置）
+- `scripts/interactions.lua` — 自定义交互回调模板
+
+### 修改文件
+- `Game.csproj` — NLua 包引用 + scripts 复制规则
+- `src/GameConfig.cs` — ScriptReloadKey = F5
+- `src/MainGame.cs` — ScriptEngine/GameAPI 集成，删除硬编码实体和光源，F5 热重载
+- `src/InteractionSystem.cs` — Lua 回调分发 + 模板纹理切换
+
+### 代码结构
+```
+src/
+├── Program.cs             — 入口点
+├── MainGame.cs            — 主循环，Lua 集成 + 热重载
+├── GameConfig.cs          — 集中配置常量
+├── Camera.cs              — SmoothDamp 镜头
+├── IsoUtils.cs            — 等距坐标转换
+├── TileMap.cs             — 地面纹理提供者
+├── BlockRenderer.cs       — 等距方块纹理生成
+├── Components.cs          — ECS 组件定义
+├── EntityManager.cs       — 实体管理 + 空间索引
+├── CollisionSystem.cs     — 碰撞检测
+├── InputSystem.cs         — 玩家输入处理
+├── InteractionSystem.cs   — 交互系统 + Lua 回调
+├── EntityFactory.cs       — 实体工厂（Player + 回退）
+├── EntityTemplate.cs      — 实体模板数据结构
+├── TextureGenerator.cs    — 参数化纹理生成
+├── ScriptEngine.cs        — NLua 运行时管理
+├── GameAPI.cs             — Lua↔C# 桥接
+├── Player.cs              — 玩家薄包装
+├── Chunk.cs               — 16×16 chunk 数据结构
+├── IChunkGenerator.cs     — chunk 生成接口
+├── ProceduralGenerator.cs — 确定性生成 + 测试房间
+├── ChunkManager.cs        — chunk 生命周期管理
+├── LightSource.cs         — 点光源数据结构
+├── LightingSystem.cs      — 光照图渲染 + 阴影 + 合成
+├── ProceduralAudio.cs     — 程序化音频生成
+├── AudioSystem.cs         — 音频管理器
+├── Particle.cs            — 粒子数据 struct
+├── ParticleSystem.cs      — 粒子引擎
+└── WeatherSystem.cs       — 天气状态机 + 环境效果
+scripts/
+├── entities.lua           — 实体模板定义
+├── interactions.lua       — 自定义交互回调
+└── world.lua              — 世界初始化
+```
+
+---
+
 ## 待完成里程碑
 
 | 里程碑 | 目标 | 状态 |
 |--------|------|------|
-| Milestone 7 | 音频系统 | 待开始 |
-| Milestone 8 | Lua 脚本绑定 | 待开始 |
 | Milestone 9 | 网络与多人 | 待开始 |
 
 ---

@@ -9,8 +9,10 @@ public class InputSystem
     private readonly CollisionSystem _collision;
     private readonly InteractionSystem _interaction;
     private readonly int _playerEntityId;
+    private AudioSystem _audio;
 
     private KeyboardState _prevKeyboard;
+    private float _footstepTimer;
 
     public InputSystem(EntityManager entities, CollisionSystem collision,
                        InteractionSystem interaction, int playerEntityId)
@@ -20,6 +22,8 @@ public class InputSystem
         _interaction = interaction;
         _playerEntityId = playerEntityId;
     }
+
+    public void SetAudioSystem(AudioSystem audio) => _audio = audio;
 
     public void Update(GameTime gameTime)
     {
@@ -68,6 +72,18 @@ public class InputSystem
                 pos.TilePosition = new Vector2(pos.TilePosition.X, newPos.Y);
             }
             _entities.Positions[_playerEntityId] = pos;
+
+            // Footstep audio
+            _footstepTimer += dt;
+            if (_footstepTimer >= GameConfig.FootstepInterval)
+            {
+                _footstepTimer -= GameConfig.FootstepInterval;
+                _audio?.PlayFootstep(pos.TilePosition.X, pos.TilePosition.Y);
+            }
+        }
+        else
+        {
+            _footstepTimer = GameConfig.FootstepInterval; // next move starts with immediate footstep
         }
 
         _entities.PlayerControlled[_playerEntityId] = pc;

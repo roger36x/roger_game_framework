@@ -30,7 +30,16 @@ public class MainGame : Microsoft.Xna.Framework.Game
     // ECS
     private EntityManager _entities;
     private Player _player;
+    private CollisionSystem _collisionSystem;
+    private InteractionSystem _interactionSystem;
     private InputSystem _inputSystem;
+
+    // Audio
+    private AudioSystem _audioSystem;
+
+    // Scripting
+    private ScriptEngine _scriptEngine;
+    private GameAPI _gameAPI;
 
     // Weather
     private ParticleSystem _particleSystem;
@@ -45,6 +54,7 @@ public class MainGame : Microsoft.Xna.Framework.Game
 
     // Debug stats
     private int _visibleTileCount;
+    private KeyboardState _prevKeyboard;
 
     public MainGame()
     {
@@ -69,18 +79,26 @@ public class MainGame : Microsoft.Xna.Framework.Game
         _entities = new EntityManager();
         _player = new Player(_entities, GraphicsDevice);
 
-        var collisionSystem = new CollisionSystem(_entities, _chunkManager);
-        var interactionSystem = new InteractionSystem(_entities, collisionSystem);
-        _inputSystem = new InputSystem(_entities, collisionSystem, interactionSystem, _player.EntityId);
+        _collisionSystem = new CollisionSystem(_entities, _chunkManager);
+        _interactionSystem = new InteractionSystem(_entities, _collisionSystem);
+        _inputSystem = new InputSystem(_entities, _collisionSystem, _interactionSystem, _player.EntityId);
+
+        // Audio system
+        _audioSystem = new AudioSystem();
+        _interactionSystem.SetAudioSystem(_audioSystem);
+        _inputSystem.SetAudioSystem(_audioSystem);
 
         _particleSystem = new ParticleSystem(GraphicsDevice, GameConfig.MaxParticles);
         _weatherSystem = new WeatherSystem(GraphicsDevice, _particleSystem, _lightingSystem);
+        _weatherSystem.SetAudioSystem(_audioSystem);
 
-        // Test entities
-        EntityFactory.CreateDoor(_entities, GraphicsDevice, 97, 95, startOpen: false);
-        EntityFactory.CreateFurniture(_entities, GraphicsDevice, 97, 97);
-        EntityFactory.CreateItem(_entities, GraphicsDevice, 96, 96);  // inside room
-        EntityFactory.CreateItem(_entities, GraphicsDevice, 101, 100); // near player spawn
+        // Lua scripting
+        _scriptEngine = new ScriptEngine();
+        _gameAPI = new GameAPI(_scriptEngine, _entities, GraphicsDevice, _collisionSystem, _audioSystem, _lightingSystem);
+        _gameAPI.Register();
+        _interactionSystem.SetGameAPI(_gameAPI);
+        _interactionSystem.SetScriptEngine(_scriptEngine);
+        _scriptEngine.LoadAll();
 
         _camera.Position = _player.GetScreenPosition();
 
@@ -95,37 +113,7 @@ public class MainGame : Microsoft.Xna.Framework.Game
         _lightingSystem.LoadContent();
         _particleSystem.LoadContent();
         _weatherSystem.LoadContent();
-
-        // Test lights
-        _lightingSystem.AddLight(new LightSource
-        {
-            TilePosition = new Vector2(100, 100),
-            Color = new Color(255, 220, 150),
-            Radius = 8,
-            Intensity = 1.0f
-        });
-        _lightingSystem.AddLight(new LightSource
-        {
-            TilePosition = new Vector2(105, 98),
-            Color = new Color(150, 200, 255),
-            Radius = 6,
-            Intensity = 0.8f
-        });
-        _lightingSystem.AddLight(new LightSource
-        {
-            TilePosition = new Vector2(96, 103),
-            Color = new Color(255, 180, 100),
-            Radius = 10,
-            Intensity = 1.0f
-        });
-        // Light inside the test room (97, 97)
-        _lightingSystem.AddLight(new LightSource
-        {
-            TilePosition = new Vector2(97, 97),
-            Color = new Color(255, 200, 120),
-            Radius = 5,
-            Intensity = 1.0f
-        });
+        // Lights are now added by scripts/world.lua via add_light()
     }
 
     protected override void Update(GameTime gameTime)
@@ -136,12 +124,24 @@ public class MainGame : Microsoft.Xna.Framework.Game
         _camera.Follow(_player.GetScreenPosition(), dt);
         _chunkManager.Update();
 
+        // Update audio with player position
+        var playerPos = _entities.Positions[_player.EntityId].TilePosition;
+        _audioSystem.Update(dt, playerPos);
+
         // Day/night toggle: K=day, L=night
         var keyboard = Keyboard.GetState();
         if (keyboard.IsKeyDown(Keys.K))
             _weatherSystem.SetDayNight(false);
         if (keyboard.IsKeyDown(Keys.L))
             _weatherSystem.SetDayNight(true);
+
+        // Audio mute toggle: M key (single press)
+        if (keyboard.IsKeyDown(GameConfig.AudioMuteKey) && !_prevKeyboard.IsKeyDown(GameConfig.AudioMuteKey))
+            _audioSystem.ToggleMute();
+
+        // Hot-reload scripts: F5 key (single press)
+        if (keyboard.IsKeyDown(GameConfig.ScriptReloadKey) && !_prevKeyboard.IsKeyDown(GameConfig.ScriptReloadKey))
+            HotReloadScripts();
 
         // Weather toggle: 1=rain, 2=snow, 3=fog, 4=clear
         if (keyboard.IsKeyDown(GameConfig.WeatherRainKey))
@@ -165,9 +165,11 @@ public class MainGame : Microsoft.Xna.Framework.Game
             _currentFps = _frameCount;
             _frameCount = 0;
             _fpsTimer -= 1f;
-            Window.Title = $"Game Prototype - FPS: {_currentFps} | Chunks: {_chunkManager.LoadedChunkCount} | Tiles: {_visibleTileCount} | Lights: {_lightingSystem.LightCount} | Weather: {_weatherSystem.CurrentWeather} | Particles: {_weatherSystem.ParticleCount}";
+            string audioStatus = _audioSystem.IsMuted ? "Muted" : "On";
+            Window.Title = $"Game Prototype - FPS: {_currentFps} | Chunks: {_chunkManager.LoadedChunkCount} | Tiles: {_visibleTileCount} | Lights: {_lightingSystem.LightCount} | Weather: {_weatherSystem.CurrentWeather} | Particles: {_weatherSystem.ParticleCount} | Audio: {audioStatus} | Lua: {_gameAPI.Templates.Count} types";
         }
 
+        _prevKeyboard = keyboard;
         base.Update(gameTime);
     }
 
@@ -293,6 +295,42 @@ public class MainGame : Microsoft.Xna.Framework.Game
         _weatherSystem.Draw(_spriteBatch);
 
         base.Draw(gameTime);
+    }
+
+    private void HotReloadScripts()
+    {
+        Console.WriteLine("[MainGame] Hot-reloading scripts...");
+
+        // Destroy all non-player entities
+        var idsToDestroy = new List<int>();
+        foreach (var id in _entities.Positions.Keys)
+        {
+            if (id != _player.EntityId)
+                idsToDestroy.Add(id);
+        }
+        foreach (var id in idsToDestroy)
+            _entities.DestroyEntity(id);
+
+        // Clear lights and texture cache
+        _lightingSystem.ClearLights();
+        TextureGenerator.ClearCache();
+
+        // Reload Lua
+        _scriptEngine.Reload();
+        _gameAPI = new GameAPI(_scriptEngine, _entities, GraphicsDevice, _collisionSystem, _audioSystem, _lightingSystem);
+        _gameAPI.Register();
+        _interactionSystem.SetGameAPI(_gameAPI);
+        _interactionSystem.SetScriptEngine(_scriptEngine);
+        _scriptEngine.LoadAll();
+
+        Console.WriteLine("[MainGame] Hot-reload complete.");
+    }
+
+    protected override void UnloadContent()
+    {
+        _scriptEngine?.Dispose();
+        TextureGenerator.ClearCache();
+        base.UnloadContent();
     }
 
     private static Color LerpColor(Color a, Color b, float t)

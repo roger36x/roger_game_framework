@@ -1,0 +1,9 @@
+-- Custom interaction callbacks
+-- Define functions here that are referenced by on_interact in entity templates.
+--
+-- Example:
+-- function on_interact_lever(entity_id, player_id)
+--     local pos = get_position(entity_id)
+--     log("Lever pulled at " .. pos.x .. ", " .. pos.y)
+--     play_sound("pickup", pos.x, pos.y)
+-- end

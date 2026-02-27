@@ -94,4 +94,19 @@ public static class GameConfig
     public const Keys WeatherSnowKey = Keys.D2;
     public const Keys WeatherFogKey = Keys.D3;
     public const Keys WeatherClearKey = Keys.D4;
+
+    // === Audio ===
+    public const float MasterVolume = 0.7f;
+    public const float SfxVolume = 0.8f;
+    public const float AmbientVolume = 0.3f;
+    public const float FootstepInterval = 0.35f;
+    public const float FootstepPitchVariation = 0.15f;
+    public const float AudioMaxDistance = 12f;
+    public const float AudioPanScale = 0.5f;
+    public const int AudioSampleRate = 44100;
+    public const Keys AudioMuteKey = Keys.M;
+    public const float AmbientCrossfadeSpeed = 2f;
+
+    // === Scripting ===
+    public const Keys ScriptReloadKey = Keys.F5;
 }

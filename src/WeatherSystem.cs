@@ -18,6 +18,7 @@ public class WeatherSystem
     private readonly LightingSystem _lighting;
     private readonly GraphicsDevice _graphicsDevice;
     private readonly Random _rng = new();
+    private AudioSystem _audio;
 
     private WeatherType _currentWeather = WeatherType.Clear;
     private WeatherType _targetWeather = WeatherType.Clear;
@@ -44,6 +45,8 @@ public class WeatherSystem
         _lighting = lighting;
     }
 
+    public void SetAudioSystem(AudioSystem audio) => _audio = audio;
+
     public void LoadContent()
     {
         _fogTexture = CreateFogTexture();
@@ -54,11 +57,13 @@ public class WeatherSystem
         if (weather == _targetWeather) return;
         _targetWeather = weather;
         _transitionProgress = 0f;
+        _audio?.SetAmbient(weather);
     }
 
     public void SetDayNight(bool isNight)
     {
         _isNight = isNight;
+        _audio?.SetDayNight(isNight);
     }
 
     public void Update(float deltaTime, Vector2 cameraPosition)
@@ -82,6 +87,9 @@ public class WeatherSystem
         float currentIntensity = (_currentWeather != WeatherType.Clear) ? 1f : 0f;
         float easedProgress = _transitionProgress * _transitionProgress;
         _intensity = MathHelper.Lerp(currentIntensity, targetIntensity, easedProgress);
+
+        // Update audio intensity
+        _audio?.UpdateWeatherIntensity(_intensity);
 
         // Update wetness
         if (_targetWeather == WeatherType.Rain || _currentWeather == WeatherType.Rain)

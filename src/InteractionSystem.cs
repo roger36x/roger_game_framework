@@ -8,12 +8,19 @@ public class InteractionSystem
 {
     private readonly EntityManager _entities;
     private readonly CollisionSystem _collision;
+    private AudioSystem _audio;
+    private GameAPI _gameAPI;
+    private ScriptEngine _scriptEngine;
 
     public InteractionSystem(EntityManager entities, CollisionSystem collision)
     {
         _entities = entities;
         _collision = collision;
     }
+
+    public void SetAudioSystem(AudioSystem audio) => _audio = audio;
+    public void SetGameAPI(GameAPI api) => _gameAPI = api;
+    public void SetScriptEngine(ScriptEngine engine) => _scriptEngine = engine;
 
     public void TryInteract(int playerEntityId)
     {
@@ -51,16 +58,34 @@ public class InteractionSystem
 
         var inter = _entities.Interactables[bestEntity];
 
+        // Get entity tile position for spatial audio
+        float etx = 0, ety = 0;
+        if (_entities.Positions.TryGetValue(bestEntity, out var epos))
+        {
+            etx = epos.TilePosition.X;
+            ety = epos.TilePosition.Y;
+        }
+
+        // Check for Lua custom callback first
+        if (_gameAPI != null && _gameAPI.InteractionCallbacks.TryGetValue(bestEntity, out var callbackName))
+        {
+            _scriptEngine?.CallFunction(callbackName, bestEntity, playerEntityId);
+            return;
+        }
+
         switch (inter.Type)
         {
             case InteractionType.Door:
                 ToggleDoor(bestEntity, inter);
+                _audio?.PlaySfx(inter.IsOpen ? SfxType.DoorOpen : SfxType.DoorClose, etx, ety);
                 break;
             case InteractionType.Pickup:
+                _audio?.PlaySfx(SfxType.Pickup, etx, ety);
                 _entities.DestroyEntity(bestEntity);
                 break;
             case InteractionType.Push:
                 TryPushToward(bestEntity, playerPos.TilePosition);
+                _audio?.PlaySfx(SfxType.Push, etx, ety);
                 break;
         }
     }
@@ -79,9 +104,15 @@ public class InteractionSystem
         // Update sprite texture (open doors use translucent texture)
         if (_entities.Sprites.TryGetValue(entityId, out var sprite))
         {
-            sprite.Texture = inter.IsOpen
-                ? EntityFactory.DoorOpenTexture
-                : EntityFactory.DoorClosedTexture;
+            // Try template-based textures first
+            string templateName = inter.IsOpen ? "door_open" : "door";
+            var tex = TextureGenerator.GetCached(templateName);
+
+            if (tex != null)
+                sprite.Texture = tex;
+            else
+                sprite.Texture = inter.IsOpen ? EntityFactory.DoorOpenTexture : EntityFactory.DoorClosedTexture;
+
             _entities.Sprites[entityId] = sprite;
         }
     }
