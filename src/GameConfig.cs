@@ -98,7 +98,7 @@ public static class GameConfig
     // === Audio ===
     public const float MasterVolume = 0.7f;
     public const float SfxVolume = 0.8f;
-    public const float AmbientVolume = 0.3f;
+    public const float AmbientVolume = 0.1f;
     public const float FootstepInterval = 0.35f;
     public const float FootstepPitchVariation = 0.15f;
     public const float AudioMaxDistance = 12f;

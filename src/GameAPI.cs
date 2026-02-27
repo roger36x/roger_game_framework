@@ -41,14 +41,24 @@ public class GameAPI
     {
         var lua = _engine.LuaState;
         lua.RegisterFunction("define_entity", this, GetType().GetMethod(nameof(DefineEntity)));
-        lua.RegisterFunction("spawn", this, GetType().GetMethod(nameof(Spawn)));
+        lua.RegisterFunction("_spawn", this, GetType().GetMethod(nameof(Spawn)));
         lua.RegisterFunction("destroy", this, GetType().GetMethod(nameof(Destroy)));
         lua.RegisterFunction("get_position", this, GetType().GetMethod(nameof(GetPosition)));
         lua.RegisterFunction("set_position", this, GetType().GetMethod(nameof(SetPosition)));
         lua.RegisterFunction("play_sound", this, GetType().GetMethod(nameof(PlaySound)));
         lua.RegisterFunction("can_move_to", this, GetType().GetMethod(nameof(CanMoveTo)));
-        lua.RegisterFunction("add_light", this, GetType().GetMethod(nameof(AddLight)));
+        lua.RegisterFunction("_add_light", this, GetType().GetMethod(nameof(AddLight)));
         lua.RegisterFunction("log", this, GetType().GetMethod(nameof(Log)));
+
+        // Lua shims: handle optional args and coerce Lua 5.4 integers to floats
+        lua.DoString(@"
+            function spawn(type_name, x, y, props)
+                return _spawn(type_name, x * 1.0, y * 1.0, props)
+            end
+            function add_light(tx, ty, r, g, b, radius, intensity)
+                _add_light(tx * 1.0, ty * 1.0, r * 1.0, g * 1.0, b * 1.0, radius * 1.0, intensity * 1.0)
+            end
+        ");
     }
 
     public void DefineEntity(string name, LuaTable table)
